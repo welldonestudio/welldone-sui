@@ -1,7 +1,7 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import type { SuiMoveNormalizedType } from '@mysten/sui.js/client';
+import type { SuiMoveNormalizedType } from '@mysten/sui.js';
 
 /**
  * Converts a SuiMoveNormalizedType to string
@@ -56,4 +56,11 @@ export function getNormalizedFunctionParameterTypeDetails(
 		isTxContext: paramTypeText === '0x2::tx_context::TxContext',
 		paramTypeText,
 	};
+}
+
+export function shortenPackageId(packageId: string | undefined) {
+	if (!packageId) {
+		return '';
+	}
+	return packageId.replace('0'.repeat(63), '');
 }

@@ -4,23 +4,36 @@
 import { Search24 } from '@mysten/icons';
 import { Combobox, ComboboxInput, ComboboxList } from '@mysten/ui';
 import clsx from 'clsx';
-import { useState, useCallback, useEffect } from 'react';
+import { type Dispatch, type SetStateAction, useCallback, useEffect, useState } from 'react';
 import { type Direction } from 'react-resizable-panels';
 
 import ModuleView from './ModuleView';
 import { ModuleFunctionsInteraction } from './module-functions-interaction';
+import DependencyView, { type VersionInfo } from '~/components/module/DependencyView';
+import VerifiedModuleViewWrapper from '~/components/module/VerifiedModuleViewWrapper';
 import { useBreakpoint } from '~/hooks/useBreakpoint';
 import { SplitPanes } from '~/ui/SplitPanes';
-import { TabHeader } from '~/ui/Tabs';
+import { TabHeader, Tabs, TabsContent, TabsList, TabsTrigger } from '~/ui/Tabs';
 import { ListItem, VerticalList } from '~/ui/VerticalList';
 import { useSearchParamsMerged } from '~/ui/utils/LinkWithQuery';
 
-type ModuleType = [moduleName: string, code: string];
+export type ModuleType = [moduleName: string, code: string];
+
+export interface PackageFile {
+	relativePath: string;
+	content: string;
+}
 
 interface Props {
 	id?: string;
 	modules: ModuleType[];
 	splitPanelOrientation: Direction;
+	initialTab?: string | null;
+	packageFiles: PackageFile[];
+	verified: boolean;
+	setVerified: Dispatch<SetStateAction<boolean>>;
+	setPackageFiles: Dispatch<SetStateAction<PackageFile[]>>;
+	versionInfo?: VersionInfo;
 }
 
 interface ModuleViewWrapperProps {
@@ -40,13 +53,26 @@ function ModuleViewWrapper({ id, selectedModuleName, modules }: ModuleViewWrappe
 
 	return <ModuleView id={id} name={name} code={code} />;
 }
+const VALID_TABS = ['bytecode', 'code', 'dependencies'];
 
-function PkgModuleViewWrapper({ id, modules, splitPanelOrientation }: Props) {
+function PkgModuleViewWrapper({
+	id,
+	modules,
+	splitPanelOrientation,
+	initialTab,
+	packageFiles,
+	verified,
+	setVerified,
+	versionInfo,
+}: Props) {
 	const isMediumOrAbove = useBreakpoint('md');
 
 	const modulenames = modules.map(([name]) => name);
 	const [searchParams, setSearchParams] = useSearchParamsMerged();
 	const [query, setQuery] = useState('');
+	const [activeTab, setActiveTab] = useState(() =>
+		initialTab && VALID_TABS.includes(initialTab) ? initialTab : 'bytecode',
+	);
 
 	// Extract module in URL or default to first module in list
 	const selectedModule =
@@ -91,17 +117,58 @@ function PkgModuleViewWrapper({ id, modules, splitPanelOrientation }: Props) {
 		{
 			panel: (
 				<div key="bytecode" className="h-full grow overflow-auto border-gray-45 pt-5 md:pl-7">
-					<TabHeader size="md" title="Bytecode">
-						<div
-							className={clsx(
-								'overflow-auto',
-								(splitPanelOrientation === 'horizontal' || !isMediumOrAbove) &&
-									'h-verticalListLong',
-							)}
-						>
-							<ModuleViewWrapper id={id} modules={modules} selectedModuleName={selectedModule} />
-						</div>
-					</TabHeader>
+					<Tabs size="lg" value={activeTab} onValueChange={setActiveTab}>
+						<TabsList>
+							<TabsTrigger value="bytecode">Bytecode</TabsTrigger>
+							<TabsTrigger value="code">Code {verified ? <sup>✅</sup> : null}</TabsTrigger>
+							<TabsTrigger value="dependencies">Dependencies</TabsTrigger>
+						</TabsList>
+						<TabsContent value="bytecode">
+							<div
+								className={clsx(
+									'overflow-auto',
+									(splitPanelOrientation === 'horizontal' || !isMediumOrAbove) &&
+										'h-verticalListLong',
+								)}
+							>
+								<ModuleViewWrapper id={id} modules={modules} selectedModuleName={selectedModule} />
+							</div>
+						</TabsContent>
+						<TabsContent value="code">
+							<div
+								className={clsx(
+									'overflow-auto',
+									(splitPanelOrientation === 'horizontal' || !isMediumOrAbove) &&
+										'h-verticalListLong',
+								)}
+							>
+								<VerifiedModuleViewWrapper
+									id={id}
+									modules={modules}
+									packageFiles={packageFiles}
+									verified={verified}
+									setVerified={setVerified}
+									selectedModuleName={selectedModule}
+								/>
+							</div>
+						</TabsContent>
+						<TabsContent value="dependencies">
+							<div
+								className={clsx(
+									'overflow-auto',
+									(splitPanelOrientation === 'horizontal' || !isMediumOrAbove) &&
+										'h-verticalListLong',
+								)}
+							>
+								<DependencyView
+									id={id}
+									modules={modules}
+									versionInfo={versionInfo}
+									selectedModuleName={selectedModule}
+								/>
+							</div>
+						</TabsContent>
+					</Tabs>
 				</div>
 			),
 			defaultSize: 40,

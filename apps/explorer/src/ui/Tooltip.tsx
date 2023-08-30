@@ -30,9 +30,16 @@ interface TooltipProps {
 	children: ReactNode;
 	onOpen?: () => void;
 	placement?: Placement;
+	isInline?: boolean;
 }
 
-export function Tooltip({ tip, children, onOpen, placement = 'top' }: TooltipProps) {
+export function Tooltip({
+	tip,
+	children,
+	onOpen,
+	placement = 'top',
+	isInline = false,
+}: TooltipProps) {
 	const [open, setOpen] = useState(false);
 	const arrowRef = useRef(null);
 
@@ -95,6 +102,15 @@ export function Tooltip({ tip, children, onOpen, placement = 'top' }: TooltipPro
 			<div tabIndex={0} className="w-fit" ref={refs.setReference} {...getReferenceProps()}>
 				{children}
 			</div>
+			{/*{isInline ? (*/}
+			{/*	<div tabIndex={0} className="inline-block w-fit" {...getReferenceProps()}>*/}
+			{/*		{children}*/}
+			{/*	</div>*/}
+			{/*) : (*/}
+			{/*	<div tabIndex={0} className="w-fit" {...getReferenceProps()}>*/}
+			{/*		{children}*/}
+			{/*	</div>*/}
+			{/*)}*/}
 			<FloatingPortal>
 				<AnimatePresence>
 					{open ? (

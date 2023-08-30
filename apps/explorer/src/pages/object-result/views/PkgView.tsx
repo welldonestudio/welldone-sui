@@ -2,11 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { LoadingIndicator, RadioGroup, RadioGroupItem } from '@mysten/ui';
-import { useState } from 'react';
+import { Dispatch, SetStateAction, useState } from 'react';
 import { type Direction } from 'react-resizable-panels';
 
 import { ErrorBoundary } from '../../../components/error-boundary/ErrorBoundary';
-import PkgModulesWrapper from '../../../components/module/PkgModulesWrapper';
+import PkgModulesWrapper, { PackageFile } from '../../../components/module/PkgModulesWrapper';
 import { useGetTransaction } from '../../../hooks/useGetTransaction';
 import { getOwnerStr } from '../../../utils/objectUtils';
 import { trimStdLibPrefix } from '../../../utils/stringUtils';
@@ -18,6 +18,7 @@ import { AddressLink, ObjectLink } from '~/ui/InternalLink';
 import { TabHeader, Tabs, TabsContent, TabsList, TabsTrigger } from '~/ui/Tabs';
 
 import styles from './ObjectView.module.css';
+import { VersionInfo } from '~/components/module/DependencyView';
 
 const GENESIS_TX_DIGEST = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=';
 
@@ -26,7 +27,21 @@ const splitPanelsOrientation: { label: string; value: Direction }[] = [
 	{ label: 'SIDE-BY-SIDE', value: 'horizontal' },
 ];
 
-function PkgView({ data }: { data: DataType }) {
+function PkgView({
+	data,
+	verified,
+	setVerified,
+	setPackageFiles,
+	packageFiles,
+	versionInfo,
+}: {
+	data: DataType;
+	verified: boolean;
+	setVerified: Dispatch<SetStateAction<boolean>>;
+	setPackageFiles: Dispatch<SetStateAction<PackageFile[]>>;
+	packageFiles: PackageFile[];
+	versionInfo?: VersionInfo;
+}) {
 	const [selectedSplitPanelOrientation, setSplitPanelOrientation] = useState(
 		splitPanelsOrientation[1].value,
 	);
@@ -50,6 +65,8 @@ function PkgView({ data }: { data: DataType }) {
 	const properties = Object.entries(viewedData.data?.contents)
 		.filter(([key, _]) => key !== 'name')
 		.filter(([_, value]) => checkIsPropertyType(value));
+
+	console.log(`properties`, properties);
 
 	return (
 		<div>
@@ -105,6 +122,11 @@ function PkgView({ data }: { data: DataType }) {
 							<PkgModulesWrapper
 								id={data.id}
 								modules={properties}
+								packageFiles={packageFiles}
+								setPackageFiles={setPackageFiles}
+								verified={verified}
+								setVerified={setVerified}
+								versionInfo={versionInfo}
 								splitPanelOrientation={selectedSplitPanelOrientation}
 							/>
 						</ErrorBoundary>

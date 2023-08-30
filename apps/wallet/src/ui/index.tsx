@@ -4,7 +4,7 @@
 import '@fontsource-variable/inter';
 import '@fontsource-variable/red-hat-mono';
 import { GrowthBookProvider } from '@growthbook/growthbook-react';
-import { RpcClientContext } from '@mysten/core';
+import { SuiClientProvider } from '@mysten/dapp-kit';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import { Fragment, StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -21,7 +21,7 @@ import { initAppType } from '_redux/slices/app';
 import { getFromLocationSearch } from '_redux/slices/app/AppType';
 import { initAmplitude } from '_src/shared/analytics/amplitude';
 import { setAttributes } from '_src/shared/experimentation/features';
-import initSentry from '_src/shared/sentry';
+import initSentry from '_src/ui/app/helpers/sentry';
 import store from '_store';
 import { api, thunkExtras } from '_store/thunk-extras';
 
@@ -74,11 +74,11 @@ function AppWrapper() {
 								},
 							}}
 						>
-							<RpcClientContext.Provider value={api.instance.fullNode}>
+							<SuiClientProvider networks={{ [api.apiEnv]: api.instance.fullNode }}>
 								<ErrorBoundary>
 									<App />
 								</ErrorBoundary>
-							</RpcClientContext.Provider>
+							</SuiClientProvider>
 						</PersistQueryClientProvider>
 					</Fragment>
 				</SuiLedgerClientProvider>

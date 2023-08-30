@@ -73,7 +73,7 @@ module.exports = {
 	},
 	overrides: [
 		{
-			files: ['sdk/typescript/src/**/*'],
+			files: ['sdk/typescript/src/**/*', 'sdk/dapp-kit/**/*'],
 			rules: {
 				'require-extensions/require-extensions': 'error',
 				'require-extensions/require-index': 'error',
@@ -284,7 +284,7 @@ module.exports = {
 			},
 		},
 		{
-			files: ['sdk/ledgerjs-hw-app-sui/**/*', 'apps/wallet/**/*'],
+			files: ['sdk/ledgerjs-hw-app-sui/**/*', 'apps/wallet/**/*', 'sdk/zklogin/**/*'],
 			rules: {
 				// ledgerjs-hw-app-sui and wallet use Buffer
 				'no-restricted-globals': ['off'],

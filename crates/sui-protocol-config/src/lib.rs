@@ -4,13 +4,14 @@
 use serde::{Deserialize, Serialize};
 use serde_with::skip_serializing_none;
 use std::cell::RefCell;
+use std::collections::BTreeSet;
 use std::sync::atomic::{AtomicBool, Ordering};
-use sui_protocol_config_macros::{ProtocolConfigFeatureFlagsGetters, ProtocolConfigGetters};
+use sui_protocol_config_macros::{ProtocolConfigAccessors, ProtocolConfigFeatureFlagsGetters};
 use tracing::{info, warn};
 
 /// The minimum and maximum protocol versions supported by this build.
 const MIN_PROTOCOL_VERSION: u64 = 1;
-const MAX_PROTOCOL_VERSION: u64 = 19;
+const MAX_PROTOCOL_VERSION: u64 = 21;
 
 // Record history of protocol version allocations here:
 //
@@ -61,6 +62,9 @@ const MAX_PROTOCOL_VERSION: u64 = 19;
 // Version 19: Changes to sui-system package to enable liquid staking.
 //             Add limit for total size of events.
 //             Increase limit for number of events emitted to 1024.
+// Version 20: Enabling the flag `narwhal_new_leader_election_schedule` for the new narwhal leader
+//             schedule algorithm for enhanced fault tolerance and sets the bad node stake threshold
+//             value. Both values are set for all the environments except mainnet.
 
 #[derive(Copy, Clone, Debug, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ProtocolVersion(u64);
@@ -249,12 +253,18 @@ struct FeatureFlags {
     // If true, then the new algorithm for the leader election schedule will be used
     #[serde(skip_serializing_if = "is_false")]
     narwhal_new_leader_election_schedule: bool,
+
+    // A list of supported OIDC providers that can be used for zklogin.
+    #[serde(skip_serializing_if = "is_empty")]
+    zklogin_supported_providers: BTreeSet<String>,
 }
 
 fn is_false(b: &bool) -> bool {
     !b
 }
-
+fn is_empty(b: &BTreeSet<String>) -> bool {
+    b.is_empty()
+}
 /// Ordering mechanism for transactions in one Narwhal consensus output.
 #[derive(Default, Copy, Clone, Serialize, Debug)]
 pub enum ConsensusTransactionOrdering {
@@ -303,7 +313,7 @@ impl ConsensusTransactionOrdering {
 /// return `None` if the field is not defined at that version.
 /// - If you want a customized getter, you can add a method in the impl.
 #[skip_serializing_none]
-#[derive(Clone, Serialize, Debug, ProtocolConfigGetters)]
+#[derive(Clone, Serialize, Debug, ProtocolConfigAccessors)]
 pub struct ProtocolConfig {
     pub version: ProtocolVersion,
 
@@ -717,6 +727,11 @@ pub struct ProtocolConfig {
 
     /// === Execution Version ===
     execution_version: Option<u64>,
+
+    // Dictates the threshold (percentage of stake) that is used to calculate the "bad" nodes to be
+    // swapped when creating the consensus schedule. The values should be of the range [0 - 33]. Anything
+    // above 33 (f) will not be allowed.
+    consensus_bad_nodes_stake_threshold: Option<u64>,
 }
 
 // feature flags
@@ -809,6 +824,10 @@ impl ProtocolConfig {
 
     pub fn zklogin_auth(&self) -> bool {
         self.feature_flags.zklogin_auth
+    }
+
+    pub fn zklogin_supported_providers(&self) -> &BTreeSet<String> {
+        &self.feature_flags.zklogin_supported_providers
     }
 
     pub fn consensus_transaction_ordering(&self) -> ConsensusTransactionOrdering {
@@ -1192,6 +1211,8 @@ impl ProtocolConfig {
                 execution_version: None,
 
                 max_event_emit_size_total: None,
+
+                consensus_bad_nodes_stake_threshold: None
                 // When adding a new constant, set it to None in the earliest version, like this:
                 // new_constant: None,
             },
@@ -1345,9 +1366,27 @@ impl ProtocolConfig {
             20 => {
                 let mut cfg = Self::get_for_version_impl(version - 1, chain);
                 cfg.feature_flags.commit_root_state_digest = true;
+
+                if chain != Chain::Mainnet {
+                    cfg.feature_flags.narwhal_new_leader_election_schedule = true;
+                    cfg.consensus_bad_nodes_stake_threshold = Some(20);
+                }
+
                 cfg
             }
 
+            21 => {
+                let mut cfg = Self::get_for_version_impl(version - 1, chain);
+
+                if chain != Chain::Mainnet {
+                    cfg.feature_flags.zklogin_supported_providers = BTreeSet::from([
+                        "Google".to_string(),
+                        "Facebook".to_string(),
+                        "Twitch".to_string(),
+                    ]);
+                }
+                cfg
+            }
             // Use this template when making changes:
             //
             //     // modify an existing constant.
@@ -1384,12 +1423,6 @@ impl ProtocolConfig {
 
 // Setters for tests
 impl ProtocolConfig {
-    pub fn set_max_function_definitions_for_testing(&mut self, m: u64) {
-        self.max_function_definitions = Some(m)
-    }
-    pub fn set_buffer_stake_for_protocol_upgrade_bps_for_testing(&mut self, b: u64) {
-        self.buffer_stake_for_protocol_upgrade_bps = Some(b)
-    }
     pub fn set_package_upgrades_for_testing(&mut self, val: bool) {
         self.feature_flags.package_upgrades = val
     }
@@ -1403,18 +1436,23 @@ impl ProtocolConfig {
     pub fn set_zklogin_auth(&mut self, val: bool) {
         self.feature_flags.zklogin_auth = val
     }
-    pub fn set_max_tx_gas_for_testing(&mut self, max_tx_gas: u64) {
-        self.max_tx_gas = Some(max_tx_gas)
-    }
-    pub fn set_execution_version_for_testing(&mut self, version: u64) {
-        self.execution_version = Some(version)
-    }
+
     pub fn set_upgraded_multisig_for_testing(&mut self, val: bool) {
         self.feature_flags.upgraded_multisig_supported = val
     }
     #[cfg(msim)]
     pub fn set_simplified_unwrap_then_delete(&mut self, val: bool) {
         self.feature_flags.simplified_unwrap_then_delete = val
+    }
+    pub fn set_narwhal_new_leader_election_schedule(&mut self, val: bool) {
+        self.feature_flags.narwhal_new_leader_election_schedule = val;
+    }
+
+    pub fn set_consensus_bad_nodes_stake_threshold(&mut self, val: u64) {
+        self.consensus_bad_nodes_stake_threshold = Some(val);
+    }
+    pub fn set_zklogin_supported_providers(&mut self, list: BTreeSet<String>) {
+        self.feature_flags.zklogin_supported_providers = list
     }
 }
 
@@ -1544,6 +1582,23 @@ mod test {
             prot.max_arguments(),
             prot.max_arguments_as_option().unwrap()
         );
+    }
+
+    #[test]
+    fn test_setters() {
+        let mut prot: ProtocolConfig =
+            ProtocolConfig::get_for_version(ProtocolVersion::new(1), Chain::Unknown);
+        prot.set_max_arguments_for_testing(123);
+        assert_eq!(prot.max_arguments(), 123);
+
+        prot.set_max_arguments_from_str_for_testing("321".to_string());
+        assert_eq!(prot.max_arguments(), 321);
+
+        prot.disable_max_arguments_for_testing();
+        assert_eq!(prot.max_arguments_as_option(), None);
+
+        prot.set_attr_for_testing("max_arguments".to_string(), "456".to_string());
+        assert_eq!(prot.max_arguments(), 456);
     }
 
     #[test]

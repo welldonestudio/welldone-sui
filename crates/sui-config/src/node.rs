@@ -58,6 +58,9 @@ pub struct NodeConfig {
     #[serde(default = "default_json_rpc_address")]
     pub json_rpc_address: SocketAddr,
 
+    #[serde(default)]
+    pub enable_experimental_rest_api: bool,
+
     #[serde(default = "default_metrics_address")]
     pub metrics_address: SocketAddr,
     #[serde(default = "default_admin_interface_port")]
@@ -144,19 +147,23 @@ pub struct NodeConfig {
     #[serde(default)]
     pub indexer_max_subscriptions: Option<usize>,
 
-    #[serde(default)]
-    pub transaction_kv_store_config: TransactionKeyValueStoreConfig,
+    #[serde(default = "default_transaction_kv_store_config")]
+    pub transaction_kv_store_read_config: TransactionKeyValueStoreReadConfig,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transaction_kv_store_write_config: Option<TransactionKeyValueStoreWriteConfig>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, Default)]
 #[serde(rename_all = "kebab-case")]
-pub struct TransactionKeyValueStoreConfig {
-    #[serde(default = "default_transaction_kv_store_base_url")]
+pub struct TransactionKeyValueStoreReadConfig {
     pub base_url: String,
 }
 
-fn default_transaction_kv_store_base_url() -> String {
-    "https://transactions.sui.io/".to_string()
+fn default_transaction_kv_store_config() -> TransactionKeyValueStoreReadConfig {
+    TransactionKeyValueStoreReadConfig {
+        base_url: "https://transactions.sui.io/".to_string(),
+    }
 }
 
 fn default_authority_store_pruning_config() -> AuthorityStorePruningConfig {
@@ -194,11 +201,6 @@ pub fn default_admin_interface_port() -> u16 {
 pub fn default_json_rpc_address() -> SocketAddr {
     use std::net::{IpAddr, Ipv4Addr};
     SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 9000)
-}
-
-pub fn default_websocket_address() -> Option<SocketAddr> {
-    use std::net::{IpAddr, Ipv4Addr};
-    Some(SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 9001))
 }
 
 pub fn default_concurrency_limit() -> Option<usize> {
@@ -623,6 +625,17 @@ pub struct StateArchiveConfig {
 pub struct StateSnapshotConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub object_store_config: Option<ObjectStoreConfig>,
+    pub concurrency: usize,
+}
+
+#[derive(Default, Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct TransactionKeyValueStoreWriteConfig {
+    pub aws_access_key_id: String,
+    pub aws_secret_access_key: String,
+    pub aws_region: String,
+    pub table_name: String,
+    pub bucket_name: String,
     pub concurrency: usize,
 }
 

@@ -36,6 +36,7 @@
 		"@mui/material": "^5.13.5",
 		"@mui/styled-engine": "^5.13.2",
 		"@mysten/core": "workspace:*",
+		"@mysten/dapp-kit": "workspace:*",
 		"@mysten/icons": "workspace:*",
 		"@mysten/sui.js": "workspace:*",
 		"@mysten/ui": "workspace:*",

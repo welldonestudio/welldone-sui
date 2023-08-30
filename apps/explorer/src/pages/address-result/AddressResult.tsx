@@ -2,49 +2,119 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { isSuiNSName, useResolveSuiNSAddress, useResolveSuiNSName } from '@mysten/core';
-import { Heading, LoadingIndicator } from '@mysten/ui';
+import { Domain32 } from '@mysten/icons';
+import { LoadingIndicator } from '@mysten/ui';
 import { useParams } from 'react-router-dom';
 
-import { ErrorBoundary } from '../../components/error-boundary/ErrorBoundary';
-import { TransactionsForAddress } from '../../components/transactions/TransactionsForAddress';
 import { PageLayout } from '~/components/Layout/PageLayout';
 import { OwnedCoins } from '~/components/OwnedCoins';
 import { OwnedObjects } from '~/components/OwnedObjects';
+import { ErrorBoundary } from '~/components/error-boundary/ErrorBoundary';
+import { TransactionsForAddress } from '~/components/transactions/TransactionsForAddress';
+import { useBreakpoint } from '~/hooks/useBreakpoint';
+import { Divider } from '~/ui/Divider';
 import { PageHeader } from '~/ui/PageHeader';
+import { SplitPanes } from '~/ui/SplitPanes';
+import { TabHeader, TabsList, TabsTrigger } from '~/ui/Tabs';
 
-function AddressResult({ address }: { address: string }) {
-	const { data: domainName } = useResolveSuiNSName(address);
+const LEFT_RIGHT_PANEL_MIN_SIZE = 30;
+const TOP_PANEL_MIN_SIZE = 20;
+
+function AddressResultPageHeader({ address, loading }: { address: string; loading?: boolean }) {
+	const { data: domainName, isFetching } = useResolveSuiNSName(address);
 
 	return (
-		<div className="space-y-12">
-			<PageHeader type="Address" title={address} subtitle={domainName} />
-			<div>
-				<div className="border-b border-gray-45 pb-5 md:mt-12">
-					<Heading color="gray-90" variant="heading4/semibold">
-						Owned Objects
-					</Heading>
-				</div>
+		<PageHeader
+			loading={loading || isFetching}
+			type="Address"
+			title={address}
+			subtitle={domainName}
+			before={<Domain32 className="h-6 w-6 text-steel-darker sm:h-10 sm:w-10" />}
+		/>
+	);
+}
+
+function SuiNSAddressResultPageHeader({ name }: { name: string }) {
+	const { data: address, isFetching } = useResolveSuiNSAddress(name);
+
+	return <AddressResultPageHeader address={address ?? name} loading={isFetching} />;
+}
+
+function AddressResult({ address }: { address: string }) {
+	const isMediumOrAbove = useBreakpoint('md');
+
+	const leftPane = {
+		panel: <OwnedCoins id={address} />,
+		minSize: LEFT_RIGHT_PANEL_MIN_SIZE,
+		defaultSize: LEFT_RIGHT_PANEL_MIN_SIZE,
+	};
+
+	const rightPane = {
+		panel: <OwnedObjects id={address} />,
+		minSize: LEFT_RIGHT_PANEL_MIN_SIZE,
+	};
+
+	const topPane = {
+		panel: (
+			<div className="flex h-full flex-col justify-between">
 				<ErrorBoundary>
-					<div className="flex flex-col gap-10 md:flex-row">
-						<div className="flex-1 overflow-hidden">
-							<OwnedCoins id={address} />
-						</div>
-						<div className="hidden w-px bg-gray-45 md:block" />
-						<div className="flex-1 overflow-hidden">
-							<OwnedObjects id={address} />
-						</div>
-					</div>
+					{isMediumOrAbove ? (
+						<SplitPanes
+							dividerSize="none"
+							splitPanels={[leftPane, rightPane]}
+							direction="horizontal"
+						/>
+					) : (
+						<>
+							{leftPane.panel}
+							<div className="my-8">
+								<Divider />
+							</div>
+							<div className="h-coinsAndAssetsContainer">{rightPane.panel}</div>
+						</>
+					)}
 				</ErrorBoundary>
 			</div>
+		),
+		minSize: TOP_PANEL_MIN_SIZE,
+	};
 
-			<div>
+	const bottomPane = {
+		panel: (
+			<div className="flex h-full flex-col pt-12">
+				<TabsList>
+					<TabsTrigger value="tab">Transaction Blocks</TabsTrigger>
+				</TabsList>
+
 				<ErrorBoundary>
-					<div className="mt-2">
+					<div data-testid="tx" className="mt-4 h-full overflow-auto">
 						<TransactionsForAddress address={address} type="address" />
 					</div>
 				</ErrorBoundary>
+
+				<div className="mt-0.5">
+					<Divider />
+				</div>
 			</div>
-		</div>
+		),
+	};
+
+	return (
+		<TabHeader title="Owned Objects" noGap>
+			{isMediumOrAbove ? (
+				<div className="h-300">
+					<SplitPanes dividerSize="none" splitPanels={[topPane, bottomPane]} direction="vertical" />
+				</div>
+			) : (
+				<>
+					{topPane.panel}
+					<div className="mt-5">
+						<Divider />
+					</div>
+					{bottomPane.panel}
+				</>
+			)}
+		</TabHeader>
 	);
 }
 
@@ -61,11 +131,19 @@ function SuiNSAddressResult({ name }: { name: string }) {
 
 export default function AddressResultPage() {
 	const { id } = useParams();
+	const isSuiNSAddress = isSuiNSName(id!);
+
 	return (
 		<PageLayout
-			content={
-				isSuiNSName(id!) ? <SuiNSAddressResult name={id!} /> : <AddressResult address={id!} />
-			}
+			gradient={{
+				size: 'md',
+				content: isSuiNSAddress ? (
+					<SuiNSAddressResultPageHeader name={id!} />
+				) : (
+					<AddressResultPageHeader address={id!} />
+				),
+			}}
+			content={isSuiNSAddress ? <SuiNSAddressResult name={id!} /> : <AddressResult address={id!} />}
 		/>
 	);
 }

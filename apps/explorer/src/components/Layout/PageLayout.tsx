@@ -1,11 +1,12 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { useAppsBackend } from '@mysten/core';
+import { useFeatureIsOn } from '@growthbook/growthbook-react';
+import { useAppsBackend, useElementDimensions } from '@mysten/core';
 import { LoadingIndicator } from '@mysten/ui';
 import { useQuery } from '@tanstack/react-query';
 import clsx from 'clsx';
-import { type ReactNode } from 'react';
+import { type ReactNode, useRef } from 'react';
 
 import Footer from '../footer/Footer';
 import Header from '../header/Header';
@@ -21,18 +22,15 @@ export type PageLayoutProps = {
 	isError?: boolean;
 	content: ReactNode;
 	loading?: boolean;
-	backgroundGradient?: boolean;
 };
 
-export function PageLayout({
-	gradient,
-	content,
-	loading,
-	isError,
-	backgroundGradient,
-}: PageLayoutProps) {
+const DEFAULT_HEADER_HEIGHT = 68;
+
+export function PageLayout({ gradient, content, loading, isError }: PageLayoutProps) {
 	const [network] = useNetworkContext();
 	const { request } = useAppsBackend();
+	const outageOverride = useFeatureIsOn('network-outage-override');
+
 	const { data } = useQuery({
 		queryKey: ['apps-backend', 'monitor-network'],
 		queryFn: () =>
@@ -45,20 +43,20 @@ export function PageLayout({
 		enabled: network === Network.MAINNET,
 	});
 	const isGradientVisible = !!gradient;
+	const renderNetworkDegradeBanner =
+		outageOverride || (network === Network.MAINNET && data?.degraded);
+	const headerRef = useRef<HTMLElement | null>(null);
+	const [headerHeight] = useElementDimensions(headerRef, DEFAULT_HEADER_HEIGHT);
 
 	return (
-		<div
-			className={clsx(
-				'relative min-h-screen w-full',
-				isGradientVisible && backgroundGradient && isError && 'bg-gradients-failure-start',
-				isGradientVisible && backgroundGradient && !isError && 'bg-gradients-graph-cards-start',
-			)}
-		>
-			<section className="sticky top-0 z-20 flex flex-col">
-				{network === Network.MAINNET && data?.degraded && (
+		<div className="relative min-h-screen w-full">
+			<section ref={headerRef} className="fixed top-0 z-20 flex w-full flex-col">
+				{renderNetworkDegradeBanner && (
 					<Banner rounded="none" align="center" variant="warning" fullWidth>
-						The explorer is running slower than usual. We&rsquo;re working to fix the issue and
-						appreciate your patience.
+						<div className="break-normal">
+							The explorer is running slower than usual. We&rsquo;re working to fix the issue and
+							appreciate your patience.
+						</div>
 					</Banner>
 				)}
 				<Header />
@@ -68,9 +66,21 @@ export function PageLayout({
 					<LoadingIndicator variant="lg" />
 				</div>
 			)}
-			<main className="relative z-10 bg-offwhite">
+			<main
+				className="relative z-10 bg-offwhite"
+				style={
+					!isGradientVisible
+						? {
+								paddingTop: `${headerHeight}px`,
+						  }
+						: {}
+				}
+			>
 				{isGradientVisible ? (
 					<section
+						style={{
+							paddingTop: `${headerHeight}px`,
+						}}
 						className={clsx(
 							'group/gradientContent',
 							loading && 'bg-gradients-graph-cards',
@@ -90,7 +100,9 @@ export function PageLayout({
 					</section>
 				) : null}
 				{!loading && (
-					<section className="mx-auto max-w-[1440px] p-5 sm:py-8 md:p-10">{content}</section>
+					<section className="mx-auto max-w-[1440px] p-5 pb-20 sm:py-8 md:p-10 md:pb-20">
+						{content}
+					</section>
 				)}
 			</main>
 			<Footer />

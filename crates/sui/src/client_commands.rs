@@ -65,7 +65,7 @@ macro_rules! serialize_or_execute {
     ($tx_data:expr, $serialize_unsigned:expr, $serialize_signed:expr, $context:expr, $result_variant:ident) => {{
         assert!(
             !$serialize_unsigned || !$serialize_signed,
-            "Cannot specify both --serialize-unsigned and --serialize-signed"
+            "Cannot specify both --serialize-unsigned-transaction and --serialize-signed-transaction"
         );
         if $serialize_unsigned {
             SuiClientCommandResult::SerializedUnsignedTransaction($tx_data)
@@ -160,12 +160,7 @@ pub enum SuiClientCommands {
     #[clap(name = "publish")]
     Publish {
         /// Path to directory containing a Move package
-        #[clap(
-            name = "package_path",
-            global = true,
-            parse(from_os_str),
-            default_value = "."
-        )]
+        #[clap(name = "package_path", global = true, default_value = ".")]
         package_path: PathBuf,
 
         /// Package build options
@@ -209,12 +204,7 @@ pub enum SuiClientCommands {
     #[clap(name = "verify-bytecode-meter")]
     VerifyBytecodeMeter {
         /// Path to directory containing a Move package
-        #[clap(
-            name = "package_path",
-            global = true,
-            parse(from_os_str),
-            default_value = "."
-        )]
+        #[clap(name = "package_path", global = true, default_value = ".")]
         package_path: PathBuf,
 
         /// Package build options
@@ -226,12 +216,7 @@ pub enum SuiClientCommands {
     #[clap(name = "upgrade")]
     Upgrade {
         /// Path to directory containing a Move package
-        #[clap(
-            name = "package_path",
-            global = true,
-            parse(from_os_str),
-            default_value = "."
-        )]
+        #[clap(name = "package_path", global = true, default_value = ".")]
         package_path: PathBuf,
 
         /// ID of the upgrade capability for the package being upgraded.
@@ -260,10 +245,6 @@ pub enum SuiClientCommands {
         #[clap(long)]
         with_unpublished_dependencies: bool,
 
-        /// Use the legacy digest calculation algorithm
-        #[clap(long)]
-        legacy_digest: bool,
-
         /// Instead of executing the transaction, serialize the bcs bytes of the unsigned transaction data
         /// (TransactionData) using base64 encoding, and print out the string.
         #[clap(long, required = false)]
@@ -283,12 +264,7 @@ pub enum SuiClientCommands {
     #[clap(name = "verify-source")]
     VerifySource {
         /// Path to directory containing a Move package
-        #[clap(
-            name = "package_path",
-            global = true,
-            parse(from_os_str),
-            default_value = "."
-        )]
+        #[clap(name = "package_path", global = true, default_value = ".")]
         package_path: PathBuf,
 
         /// Package build options
@@ -323,15 +299,14 @@ pub enum SuiClientCommands {
         function: String,
         /// Function name in module
         #[clap(
-        long,
-        parse(try_from_str = parse_sui_type_tag),
-        multiple_occurrences = false,
-        multiple_values = true
+            long,
+            value_parser = parse_sui_type_tag,
+            num_args(1..),
         )]
         type_args: Vec<TypeTag>,
         /// Simplified ordered args like in the function syntax
         /// ObjectIDs, Addresses must be hex strings
-        #[clap(long, multiple_occurrences = false, multiple_values = true)]
+        #[clap(long, num_args(1..))]
         args: Vec<SuiJsonValue>,
         /// ID of the gas object for gas payment, in 20 bytes Hex string
         #[clap(long)]
@@ -419,15 +394,15 @@ pub enum SuiClientCommands {
     #[clap(name = "pay")]
     Pay {
         /// The input coins to be used for pay recipients, following the specified amounts.
-        #[clap(long, multiple_occurrences = false, multiple_values = true)]
+        #[clap(long, num_args(1..))]
         input_coins: Vec<ObjectID>,
 
         /// The recipient addresses, must be of same length as amounts
-        #[clap(long, multiple_occurrences = false, multiple_values = true)]
+        #[clap(long, num_args(1..))]
         recipients: Vec<SuiAddress>,
 
         /// The amounts to be paid, following the order of recipients.
-        #[clap(long, multiple_occurrences = false, multiple_values = true)]
+        #[clap(long, num_args(1..))]
         amounts: Vec<u64>,
 
         /// ID of the gas object for gas payment, in 20 bytes Hex string
@@ -455,15 +430,15 @@ pub enum SuiClientCommands {
     /// The input coins also include the coin for gas payment, so no extra gas coin is required.
     PaySui {
         /// The input coins to be used for pay recipients, including the gas coin.
-        #[clap(long, multiple_occurrences = false, multiple_values = true)]
+        #[clap(long, num_args(1..))]
         input_coins: Vec<ObjectID>,
 
         /// The recipient addresses, must be of same length as amounts.
-        #[clap(long, multiple_occurrences = false, multiple_values = true)]
+        #[clap(long, num_args(1..))]
         recipients: Vec<SuiAddress>,
 
         /// The amounts to be paid, following the order of recipients.
-        #[clap(long, multiple_occurrences = false, multiple_values = true)]
+        #[clap(long, num_args(1..))]
         amounts: Vec<u64>,
 
         /// Gas budget for this transaction
@@ -485,11 +460,11 @@ pub enum SuiClientCommands {
     /// The input coins also include the coin for gas payment, so no extra gas coin is required.
     PayAllSui {
         /// The input coins to be used for pay recipients, including the gas coin.
-        #[clap(long, multiple_occurrences = false, multiple_values = true)]
+        #[clap(long, num_args(1..))]
         input_coins: Vec<ObjectID>,
 
         /// The recipient address.
-        #[clap(long, multiple_occurrences = false)]
+        #[clap(long)]
         recipient: SuiAddress,
 
         /// Gas budget for this transaction
@@ -560,7 +535,7 @@ pub enum SuiClientCommands {
         #[clap(long)]
         coin_id: ObjectID,
         /// Specific amounts to split out from the coin
-        #[clap(long, multiple_occurrences = false, multiple_values = true)]
+        #[clap(long, num_args(1..))]
         amounts: Option<Vec<u64>>,
         /// Count of equal-size coins to split into
         #[clap(long)]
@@ -641,7 +616,6 @@ impl SuiClientCommands {
                 gas_budget,
                 skip_dependency_verification,
                 with_unpublished_dependencies,
-                legacy_digest,
                 serialize_unsigned_transaction,
                 serialize_signed_transaction,
                 lint,
@@ -697,8 +671,8 @@ impl SuiClientCommands {
                 // policy at the moment. To change the policy you can call a Move function in the
                 // `package` module to change this policy.
                 let upgrade_policy = upgrade_cap.policy;
-                let package_digest = compiled_package
-                    .get_package_digest(with_unpublished_dependencies, !legacy_digest);
+                let package_digest =
+                    compiled_package.get_package_digest(with_unpublished_dependencies);
 
                 let data = client
                     .transaction_builder()
@@ -1310,7 +1284,7 @@ async fn compile_package(
         CompiledPackage,
         Result<ObjectID, PublishedAtError>,
     ),
-    anemo::Error,
+    anyhow::Error,
 > {
     let config = resolve_lock_file_path(build_config, Some(package_path.clone()))?;
     let run_bytecode_verifier = true;
@@ -1339,7 +1313,7 @@ async fn compile_package(
             return Err(SuiError::ModulePublishFailure {
                 error: format!(
                     "Modules must all have 0x0 as their addresses. \
-                           Violated by module {:?}",
+                     Violated by module {:?}",
                     already_published.self_id(),
                 ),
             }
@@ -1351,15 +1325,30 @@ async fn compile_package(
     }
     let compiled_modules = compiled_package.get_package_bytes(with_unpublished_dependencies);
     if !skip_dependency_verification {
-        BytecodeSourceVerifier::new(client.read_api())
-            .verify_package_deps(&compiled_package)
-            .await?;
-        eprintln!(
-            "{}",
-            "Successfully verified dependencies on-chain against source."
-                .bold()
-                .green(),
-        );
+        let verifier = BytecodeSourceVerifier::new(client.read_api());
+        if let Err(e) = verifier.verify_package_deps(&compiled_package).await {
+            return Err(SuiError::ModulePublishFailure {
+                error: format!(
+                    "[warning] {e}\n\
+                     \n\
+                     This may indicate that the on-chain version(s) of your package's dependencies \
+                     may behave differently than the source version(s) your package was built \
+                     against.\n\
+                     \n\
+                     Fix this by rebuilding your packages with source versions matching on-chain \
+                     versions of dependencies, or ignore this warning by re-running with the \
+                     --skip-dependency-verification flag."
+                ),
+            }
+            .into());
+        } else {
+            eprintln!(
+                "{}",
+                "Successfully verified dependencies on-chain against source."
+                    .bold()
+                    .green(),
+            );
+        }
     } else {
         eprintln!("{}", "Skipping dependency verification".bold().yellow());
     }

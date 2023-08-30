@@ -12,12 +12,15 @@ use move_unit_test::{extensions::set_extension_hook, UnitTestingConfig};
 use move_vm_runtime::native_extensions::NativeContextExtensions;
 use once_cell::sync::Lazy;
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
-use sui_core::authority::TemporaryStore;
 use sui_move_natives::{object_runtime::ObjectRuntime, NativesCostTable};
 use sui_protocol_config::ProtocolConfig;
 use sui_types::{
-    digests::TransactionDigest, gas_model::tables::initial_cost_schedule_for_unit_tests,
-    in_memory_storage::InMemoryStorage, metrics::LimitsMetrics, transaction::InputObjects,
+    base_types::{ObjectID, SequenceNumber},
+    error::SuiResult,
+    gas_model::tables::initial_cost_schedule_for_unit_tests,
+    metrics::LimitsMetrics,
+    object::Object,
+    storage::ChildObjectResolver,
 };
 
 // Move unit tests will halt after executing this many steps. This is a protection to avoid divergence
@@ -43,7 +46,6 @@ impl Test {
         let rerooted_path = base::reroot_path(path)?;
         // pre build for Sui-specific verifications
         let with_unpublished_deps = false;
-        let legacy_digest = false;
         let dump_bytecode_as_base64 = false;
         let generate_struct_layouts: bool = false;
         build::Build::execute_internal(
@@ -53,7 +55,6 @@ impl Test {
                 ..build_config.clone()
             },
             with_unpublished_deps,
-            legacy_digest,
             dump_bytecode_as_base64,
             generate_struct_layouts,
             self.lint,
@@ -67,14 +68,20 @@ impl Test {
     }
 }
 
-static TEST_STORE: Lazy<TemporaryStore> = Lazy::new(|| {
-    TemporaryStore::new(
-        InMemoryStorage::new(vec![]),
-        InputObjects::new(vec![]),
-        TransactionDigest::random(),
-        &ProtocolConfig::get_for_min_version(),
-    )
-});
+struct DummyChildObjectStore {}
+
+impl ChildObjectResolver for DummyChildObjectStore {
+    fn read_child_object(
+        &self,
+        _parent: &ObjectID,
+        _child: &ObjectID,
+        _child_version_upper_bound: SequenceNumber,
+    ) -> SuiResult<Option<Object>> {
+        Ok(None)
+    }
+}
+
+static TEST_STORE: Lazy<DummyChildObjectStore> = Lazy::new(|| DummyChildObjectStore {});
 
 static SET_EXTENSION_HOOK: Lazy<()> =
     Lazy::new(|| set_extension_hook(Box::new(new_testing_object_and_natives_cost_runtime)));

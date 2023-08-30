@@ -4,6 +4,7 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::path::PathBuf;
+use std::str::FromStr;
 #[cfg(msim)]
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -17,6 +18,8 @@ use anemo_tower::trace::TraceLayer;
 use anyhow::anyhow;
 use anyhow::Result;
 use arc_swap::ArcSwap;
+use fastcrypto_zkp::bn254::zk_login::JwkId;
+use fastcrypto_zkp::bn254::zk_login::OIDCProvider;
 use futures::TryFutureExt;
 use mysten_common::sync::async_once_cell::AsyncOnceCell;
 use prometheus::Registry;
@@ -37,6 +40,7 @@ use tracing::{debug, error, warn};
 use tracing::{error_span, info, Instrument};
 
 use checkpoint_executor::CheckpointExecutor;
+use fastcrypto_zkp::bn254::zk_login::JWK;
 pub use handle::SuiNodeHandle;
 use mysten_metrics::{spawn_monitored_task, RegistryService};
 use mysten_network::server::ServerBuilder;
@@ -85,7 +89,8 @@ use sui_json_rpc::move_utils::MoveUtils;
 use sui_json_rpc::read_api::ReadApi;
 use sui_json_rpc::transaction_builder_api::TransactionBuilderApi;
 use sui_json_rpc::transaction_execution_api::TransactionExecutionApi;
-use sui_json_rpc::{JsonRpcServerBuilder, ServerHandle};
+use sui_json_rpc::JsonRpcServerBuilder;
+use sui_kvstore::writer::setup_key_value_store_uploader;
 use sui_macros::fail_point_async;
 use sui_network::api::ValidatorServer;
 use sui_network::discovery;
@@ -97,6 +102,7 @@ use sui_storage::object_store::{ObjectStoreConfig, ObjectStoreType};
 use sui_storage::{
     http_key_value_store::HttpKVStore,
     key_value_store::{FallbackTransactionKVStore, TransactionKeyValueStore},
+    key_value_store_metrics::KeyValueStoreMetrics,
 };
 use sui_storage::{FileCompression, IndexStore, StorageFormat};
 use sui_types::base_types::{AuthorityName, EpochId};
@@ -108,7 +114,6 @@ use sui_types::quorum_driver_types::QuorumDriverEffectsQueueResult;
 use sui_types::sui_system_state::epoch_start_sui_system_state::EpochStartSystemState;
 use sui_types::sui_system_state::epoch_start_sui_system_state::EpochStartSystemStateTrait;
 use sui_types::sui_system_state::SuiSystemStateTrait;
-use sui_types::zk_login_util::{parse_jwks, OAuthProviderContent};
 use typed_store::rocks::default_db_options;
 use typed_store::DBMetrics;
 
@@ -141,7 +146,8 @@ struct SimState {
 pub struct SuiNode {
     config: NodeConfig,
     validator_components: Mutex<Option<ValidatorComponents>>,
-    _json_rpc_service: Option<ServerHandle>,
+    /// The http server responsible for serving JSON-RPC as well as the expirimental rest service
+    _http_server: Option<tokio::task::JoinHandle<()>>,
     state: Arc<AuthorityState>,
     transaction_orchestrator: Option<Arc<TransactiondOrchestrator<NetworkAuthorityClient>>>,
     registry_service: RegistryService,
@@ -158,7 +164,7 @@ pub struct SuiNode {
     /// Broadcast channel to notify state-sync for new validator peers.
     trusted_peer_change_tx: watch::Sender<TrustedPeerChangeEvent>,
 
-    _db_checkpoint_handle: Option<oneshot::Sender<()>>,
+    _db_checkpoint_handle: Option<tokio::sync::broadcast::Sender<()>>,
 
     #[cfg(msim)]
     sim_state: SimState,
@@ -166,6 +172,7 @@ pub struct SuiNode {
     _state_archive_handle: Option<broadcast::Sender<()>>,
 
     _state_snapshot_uploader_handle: Option<oneshot::Sender<()>>,
+    _kv_store_uploader_handle: Option<oneshot::Sender<()>>,
 }
 
 impl fmt::Debug for SuiNode {
@@ -200,24 +207,29 @@ impl SuiNode {
                 info!("Starting JWK updater task");
                 loop {
                     let epoch_store_ = epoch_store.clone();
+                    let supported_providers = epoch_store
+                        .protocol_config()
+                        .zklogin_supported_providers()
+                        .iter()
+                        .map(|s| OIDCProvider::from_str(s).expect("Invalid provider string"))
+                        .collect::<Vec<_>>();
                     let fetch_and_sleep = async move {
                         // Update the JWK value in the authority server
                         info!("fetching new JWKs");
-                        match Self::fetch_jwk().await {
+                        match Self::fetch_jwks(&supported_providers).await {
                             Err(e) => {
                                 warn!("Error when fetching JWK {:?}", e);
                                 // Retry in 30 seconds
                                 tokio::time::sleep(Duration::from_secs(30)).await;
                             }
                             Ok(keys) => {
-                                for (_, v) in keys {
-                                    epoch_store_.insert_oauth_jwk(&v);
+                                for (jwk_id, jwk) in keys {
+                                    epoch_store_.insert_oauth_jwk(&jwk_id, &jwk);
                                 }
-
-                                // Sleep for 1 hour
-                                tokio::time::sleep(Duration::from_secs(3600)).await;
                             }
                         }
+                        // Sleep for 1 hour
+                        tokio::time::sleep(Duration::from_secs(3600)).await;
                     };
 
                     tokio::select! {
@@ -234,24 +246,29 @@ impl SuiNode {
     }
 
     #[cfg(not(msim))]
-    async fn fetch_jwk() -> SuiResult<Vec<(String, OAuthProviderContent)>> {
+    async fn fetch_jwks(supported_providers: &[OIDCProvider]) -> SuiResult<Vec<(JwkId, JWK)>> {
+        use fastcrypto_zkp::bn254::zk_login::fetch_jwks;
+        let mut res = Vec::new();
         let client = reqwest::Client::new();
-        let response = client
-            .get("https://www.googleapis.com/oauth2/v2/certs")
-            .send()
-            .await
-            .map_err(|_| SuiError::JWKRetrievalError)?;
-        let bytes = response
-            .bytes()
-            .await
-            .map_err(|_| SuiError::JWKRetrievalError)?;
-
-        parse_jwks(&bytes)
+        for p in supported_providers {
+            let jwks = fetch_jwks(p, &client)
+                .await
+                .map_err(|_| SuiError::JWKRetrievalError)?;
+            res.extend(jwks);
+        }
+        Ok(res)
     }
 
     #[cfg(msim)]
-    async fn fetch_jwk() -> SuiResult<Vec<(String, OAuthProviderContent)>> {
-        parse_jwks(sui_types::zk_login_util::DEFAULT_JWK_BYTES)
+    #[allow(unused_variables)]
+    async fn fetch_jwks(supported_providers: &[OIDCProvider]) -> SuiResult<Vec<(JwkId, JWK)>> {
+        use fastcrypto_zkp::bn254::zk_login::parse_jwks;
+        // Just load a default Twitch jwk for testing.
+        parse_jwks(
+            sui_types::zk_login_util::DEFAULT_JWK_BYTES,
+            &OIDCProvider::Twitch,
+        )
+        .map_err(|_| SuiError::JWKRetrievalError)
     }
 
     pub async fn start_async(
@@ -414,6 +431,14 @@ impl SuiNode {
         )
         .expect("Initial trusted peers must be set");
 
+        // Start uploading transactions/events to remote key value store
+        let kv_store_uploader_handle = setup_key_value_store_uploader(
+            state_sync_store.clone(),
+            &config.transaction_kv_store_write_config,
+            &prometheus_registry,
+        )
+        .await?;
+
         // Start archiving local state to remote store
         let state_archive_handle =
             Self::start_state_archival(&config, &prometheus_registry, state_sync_store).await?;
@@ -493,14 +518,13 @@ impl SuiNode {
             None
         };
 
-        let json_rpc_service = build_server(
+        let http_server = build_http_server(
             state.clone(),
             &transaction_orchestrator.clone(),
             &config,
             &prometheus_registry,
             custom_rpc_runtime,
-        )
-        .await?;
+        )?;
 
         let accumulator = Arc::new(StateAccumulator::new(store));
 
@@ -557,7 +581,7 @@ impl SuiNode {
         let node = Self {
             config,
             validator_components: Mutex::new(validator_components),
-            _json_rpc_service: json_rpc_service,
+            _http_server: http_server,
             state,
             transaction_orchestrator,
             registry_service,
@@ -581,6 +605,7 @@ impl SuiNode {
 
             _state_archive_handle: state_archive_handle,
             _state_snapshot_uploader_handle: state_snapshot_handle,
+            _kv_store_uploader_handle: kv_store_uploader_handle,
         };
 
         info!("SuiNode started!");
@@ -697,7 +722,10 @@ impl SuiNode {
         config: &NodeConfig,
         prometheus_registry: &Registry,
         state_snapshot_enabled: bool,
-    ) -> Result<(DBCheckpointConfig, Option<oneshot::Sender<()>>)> {
+    ) -> Result<(
+        DBCheckpointConfig,
+        Option<tokio::sync::broadcast::Sender<()>>,
+    )> {
         let db_checkpoint_config = if config.db_checkpoint_config.checkpoint_path.is_none() {
             DBCheckpointConfig {
                 checkpoint_path: Some(config.db_checkpoint_path()),
@@ -725,7 +753,10 @@ impl SuiNode {
                     prometheus_registry,
                     state_snapshot_enabled,
                 )?;
-                Ok((db_checkpoint_config, Some(handler.start())))
+                Ok((
+                    db_checkpoint_config,
+                    Some(DBCheckpointHandler::start(handler)),
+                ))
             }
             None => Ok((db_checkpoint_config, None)),
         }
@@ -785,9 +816,9 @@ impl SuiNode {
                 .into_inner();
 
             let mut anemo_config = config.p2p_config.anemo_config.clone().unwrap_or_default();
-            // Set the max_frame_size to be 2 GB to work around the issue of there being too many
+            // Set the max_frame_size to be 1 GB to work around the issue of there being too many
             // staking events in the epoch change txn.
-            anemo_config.max_frame_size = Some(2 << 30);
+            anemo_config.max_frame_size = Some(1 << 30);
 
             // Set a higher default value for socket send/receive buffers if not already
             // configured.
@@ -799,6 +830,27 @@ impl SuiNode {
                 quic_config.socket_receive_buffer_size = Some(20 << 20);
             }
             quic_config.allow_failed_socket_buffer_size_setting = true;
+
+            // Set high-performance defaults for quinn transport.
+            // With 200MiB buffer size and ~500ms RTT, max throughput ~400MiB/s.
+            if quic_config.stream_receive_window.is_none() {
+                quic_config.stream_receive_window = Some(100 << 20);
+            }
+            if quic_config.receive_window.is_none() {
+                quic_config.receive_window = Some(200 << 20);
+            }
+            if quic_config.send_window.is_none() {
+                quic_config.send_window = Some(200 << 20);
+            }
+            if quic_config.crypto_buffer_size.is_none() {
+                quic_config.crypto_buffer_size = Some(1 << 20);
+            }
+            if quic_config.max_idle_timeout_ms.is_none() {
+                quic_config.max_idle_timeout_ms = Some(30_000);
+            }
+            if quic_config.keep_alive_interval_ms.is_none() {
+                quic_config.keep_alive_interval_ms = Some(5_000);
+            }
             anemo_config.quic = Some(quic_config);
 
             let server_name = format!("sui-{}", chain_identifier);
@@ -1420,14 +1472,16 @@ fn send_trusted_peer_change(
 fn build_kv_store(
     state: &Arc<AuthorityState>,
     config: &NodeConfig,
-) -> Result<Arc<dyn TransactionKeyValueStore + Send + Sync>> {
-    let db_store = state.db();
+    registry: &Registry,
+) -> Result<Arc<TransactionKeyValueStore>> {
+    let metrics = KeyValueStoreMetrics::new(registry);
+    let db_store = TransactionKeyValueStore::new("rocksdb", metrics.clone(), state.clone());
 
-    let base_url = &config.transaction_kv_store_config.base_url;
+    let base_url = &config.transaction_kv_store_read_config.base_url;
 
     if base_url.is_empty() {
         info!("no http kv store url provided, using local db only");
-        return Ok(db_store);
+        return Ok(Arc::new(db_store));
     }
 
     let base_url: url::Url = base_url.parse().tap_err(|e| {
@@ -1442,66 +1496,92 @@ fn build_kv_store(
         Some(Chain::Testnet) => "/testnet",
         _ => {
             info!("using local db only for kv store for unknown chain");
-            return Ok(db_store);
+            return Ok(Arc::new(db_store));
         }
     };
 
     let base_url = base_url.join(network_str)?.to_string();
-    let http_store = Arc::new(HttpKVStore::new(&base_url)?);
+    let http_store = HttpKVStore::new_kv(&base_url, metrics.clone())?;
     info!("using local key-value store with fallback to http key-value store");
-    Ok(Arc::new(FallbackTransactionKVStore::new(
-        db_store, http_store,
+    Ok(Arc::new(FallbackTransactionKVStore::new_kv(
+        db_store,
+        http_store,
+        metrics,
+        "json_rpc_fallback",
     )))
 }
 
-pub async fn build_server(
+pub fn build_http_server(
     state: Arc<AuthorityState>,
     transaction_orchestrator: &Option<Arc<TransactiondOrchestrator<NetworkAuthorityClient>>>,
     config: &NodeConfig,
     prometheus_registry: &Registry,
-    custom_runtime: Option<Handle>,
-) -> Result<Option<ServerHandle>> {
+    _custom_runtime: Option<Handle>,
+) -> Result<Option<tokio::task::JoinHandle<()>>> {
     // Validators do not expose these APIs
     if config.consensus_config().is_some() {
         return Ok(None);
     }
 
-    let db = state.database.clone();
+    let mut router = axum::Router::new();
 
-    let mut server = JsonRpcServerBuilder::new(env!("CARGO_PKG_VERSION"), prometheus_registry);
+    let json_rpc_router = {
+        let mut server = JsonRpcServerBuilder::new(env!("CARGO_PKG_VERSION"), prometheus_registry);
 
-    let kv_store = build_kv_store(&state, config)?;
+        let kv_store = build_kv_store(&state, config, prometheus_registry)?;
 
-    let metrics = Arc::new(JsonRpcMetrics::new(prometheus_registry));
-    server.register_module(ReadApi::new(state.clone(), kv_store, metrics.clone()))?;
-    server.register_module(CoinReadApi::new(state.clone(), metrics.clone()))?;
-    server.register_module(TransactionBuilderApi::new(state.clone()))?;
-    server.register_module(GovernanceReadApi::new(state.clone(), metrics.clone()))?;
-
-    if let Some(transaction_orchestrator) = transaction_orchestrator {
-        server.register_module(TransactionExecutionApi::new(
+        let metrics = Arc::new(JsonRpcMetrics::new(prometheus_registry));
+        server.register_module(ReadApi::new(
             state.clone(),
-            transaction_orchestrator.clone(),
+            kv_store.clone(),
             metrics.clone(),
         ))?;
+        server.register_module(CoinReadApi::new(
+            state.clone(),
+            kv_store.clone(),
+            metrics.clone(),
+        ))?;
+        server.register_module(TransactionBuilderApi::new(state.clone()))?;
+        server.register_module(GovernanceReadApi::new(state.clone(), metrics.clone()))?;
+
+        if let Some(transaction_orchestrator) = transaction_orchestrator {
+            server.register_module(TransactionExecutionApi::new(
+                state.clone(),
+                transaction_orchestrator.clone(),
+                metrics.clone(),
+            ))?;
+        }
+
+        server.register_module(IndexerApi::new(
+            state.clone(),
+            ReadApi::new(state.clone(), kv_store.clone(), metrics.clone()),
+            kv_store,
+            config.name_service_package_address,
+            config.name_service_registry_id,
+            config.name_service_reverse_registry_id,
+            metrics,
+            config.indexer_max_subscriptions,
+        ))?;
+        server.register_module(MoveUtils::new(state.clone()))?;
+
+        server.to_router(None)?
+    };
+
+    router = router.merge(json_rpc_router);
+
+    if config.enable_experimental_rest_api {
+        let rest_router = sui_rest_api::rest_router(state);
+        router = router.nest("/rest", rest_router);
     }
 
-    server.register_module(IndexerApi::new(
-        state.clone(),
-        ReadApi::new(state.clone(), db, metrics.clone()),
-        config.name_service_package_address,
-        config.name_service_registry_id,
-        config.name_service_reverse_registry_id,
-        metrics.clone(),
-        config.indexer_max_subscriptions,
-    ))?;
-    server.register_module(MoveUtils::new(state.clone()))?;
+    let server = axum::Server::bind(&config.json_rpc_address).serve(router.into_make_service());
 
-    let rpc_server_handle = server
-        .start(config.json_rpc_address, custom_runtime)
-        .await?;
+    let addr = server.local_addr();
+    let handle = tokio::spawn(async move { server.await.unwrap() });
 
-    Ok(Some(rpc_server_handle))
+    info!(local_addr =? addr, "Sui JSON-RPC server listening on {addr}");
+
+    Ok(Some(handle))
 }
 
 #[cfg(not(test))]

@@ -46,8 +46,8 @@ pub fn program(
     assert!(context.constraints.is_empty());
     recursive_structs::modules(context.env, &modules);
     infinite_instantiations::modules(context.env, &modules);
-    let module_info = context.modules;
     let mut prog = T::Program { modules, scripts };
+    let module_info = core::TypingProgramInfo::new(pre_compiled_lib, &prog);
     for v in &compilation_env.visitors().typing {
         let mut v = v.borrow_mut();
         v.visit(compilation_env, &module_info, &mut prog);
@@ -2292,7 +2292,7 @@ fn make_arg_types<S: std::fmt::Display, F: Fn() -> S>(
 // Module-wide warnings
 //**************************************************************************************************
 
-/// Generates warnings for unused struct types and unused (private) functions.
+/// Generates warnings for unused (private) functions.
 fn gen_unused_warnings(context: &mut Context, mdef: &T::ModuleDefinition) {
     if !mdef.is_source_module {
         // generate warnings only for modules compiled in this pass rather than for all modules

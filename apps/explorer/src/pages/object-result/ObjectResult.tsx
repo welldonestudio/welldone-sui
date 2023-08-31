@@ -125,7 +125,7 @@ export function ObjectResult() {
 
 		async function dependencyVersionCheck() {
 			const { status, data } = await axios.get<VersionInfo>(
-				`http://localhost:8000/verification/sui/dependency-version-check`,
+				`https://api.welldonestudio.io/compiler/sui/dependency-version-check`,
 				{
 					params: {
 						network: network.toLowerCase(),

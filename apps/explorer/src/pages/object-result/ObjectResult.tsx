@@ -14,7 +14,6 @@ import PkgView from './views/PkgView';
 import { TokenView } from './views/TokenView';
 import { PageLayout } from '~/components/Layout/PageLayout';
 import { ErrorBoundary } from '~/components/error-boundary/ErrorBoundary';
-import { type VersionInfo } from '~/components/module/DependencyView';
 import { type PackageFile } from '~/components/module/PkgModulesWrapper';
 import { useNetwork } from '~/context';
 import { Banner } from '~/ui/Banner';
@@ -50,7 +49,6 @@ export function ObjectResult() {
 	const { id: objID } = useParams();
 	const { data, isLoading, isError, isFetched } = useGetObject(objID!);
 	const [packageFiles, setPackageFiles] = useState<PackageFile[]>([]);
-	const [versionInfo, setVersionInfo] = useState<VersionInfo>();
 	const [verified, setVerified] = useState<boolean>(false);
 
 	useEffect(() => {
@@ -123,24 +121,7 @@ export function ObjectResult() {
 			});
 		}
 
-		async function dependencyVersionCheck() {
-			const { status, data } = await axios.get<VersionInfo>(
-				`https://api.welldonestudio.io/compiler/sui/dependency-version-check`,
-				{
-					params: {
-						network: network.toLowerCase(),
-						packageId: packageId,
-					},
-				},
-			);
-			if (status !== 200) {
-				return;
-			}
-			setVersionInfo(data);
-		}
-
 		verifyCheck().then();
-		dependencyVersionCheck().then();
 	}, [verified, data]);
 
 	if (isLoading) {
@@ -181,7 +162,6 @@ export function ObjectResult() {
 									verified={verified}
 									setVerified={setVerified}
 									setPackageFiles={setPackageFiles}
-									versionInfo={versionInfo}
 								/>
 							) : (
 								<TokenView data={data} />

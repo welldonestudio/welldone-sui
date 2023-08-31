@@ -9,7 +9,6 @@ import { type Direction } from 'react-resizable-panels';
 
 import ModuleView from './ModuleView';
 import { ModuleFunctionsInteraction } from './module-functions-interaction';
-import DependencyView, { type VersionInfo } from '~/components/module/DependencyView';
 import VerifiedModuleViewWrapper from '~/components/module/VerifiedModuleViewWrapper';
 import { useBreakpoint } from '~/hooks/useBreakpoint';
 import { SplitPanes } from '~/ui/SplitPanes';
@@ -33,7 +32,6 @@ interface Props {
 	verified: boolean;
 	setVerified: Dispatch<SetStateAction<boolean>>;
 	setPackageFiles: Dispatch<SetStateAction<PackageFile[]>>;
-	versionInfo?: VersionInfo;
 }
 
 interface ModuleViewWrapperProps {
@@ -53,7 +51,7 @@ function ModuleViewWrapper({ id, selectedModuleName, modules }: ModuleViewWrappe
 
 	return <ModuleView id={id} name={name} code={code} />;
 }
-const VALID_TABS = ['bytecode', 'code', 'dependencies'];
+const VALID_TABS = ['bytecode', 'code'];
 
 function PkgModuleViewWrapper({
 	id,
@@ -63,7 +61,6 @@ function PkgModuleViewWrapper({
 	packageFiles,
 	verified,
 	setVerified,
-	versionInfo,
 }: Props) {
 	const isMediumOrAbove = useBreakpoint('md');
 
@@ -121,7 +118,6 @@ function PkgModuleViewWrapper({
 						<TabsList>
 							<TabsTrigger value="bytecode">Bytecode</TabsTrigger>
 							<TabsTrigger value="code">Code {verified ? <sup>✅</sup> : null}</TabsTrigger>
-							<TabsTrigger value="dependencies">Dependencies</TabsTrigger>
 						</TabsList>
 						<TabsContent value="bytecode">
 							<div
@@ -148,22 +144,6 @@ function PkgModuleViewWrapper({
 									packageFiles={packageFiles}
 									verified={verified}
 									setVerified={setVerified}
-									selectedModuleName={selectedModule}
-								/>
-							</div>
-						</TabsContent>
-						<TabsContent value="dependencies">
-							<div
-								className={clsx(
-									'overflow-auto',
-									(splitPanelOrientation === 'horizontal' || !isMediumOrAbove) &&
-										'h-verticalListLong',
-								)}
-							>
-								<DependencyView
-									id={id}
-									modules={modules}
-									versionInfo={versionInfo}
 									selectedModuleName={selectedModule}
 								/>
 							</div>

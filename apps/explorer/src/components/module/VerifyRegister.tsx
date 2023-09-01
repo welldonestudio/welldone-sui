@@ -121,6 +121,7 @@ function VerifyRegister({ id, modules, verified, setVerified }: VerifyRegisterPr
 	};
 
 	const onVerificationApiServerChange = (e: any) => {
+		console.log(`onVerificationApiServerChange=${e.target.value}`);
 		setVerificationApiServer(e.target.value);
 	};
 
@@ -157,13 +158,7 @@ function VerifyRegister({ id, modules, verified, setVerified }: VerifyRegisterPr
 										}}
 									>
 										<option value="">[Please Select]</option>
-										{/*<option value="v1.3.1">v1.3.1+commit.a2af559</option>*/}
 										<option value="v1.3.0">v1.3.0+commit.434eb19</option>
-										{/*<option value="v1.2.1">v1.2.1+commit.8b68151</option>*/}
-										{/*<option value="v1.2.0">v1.2.0+commit.7ef210c</option>*/}
-										{/*<option value="v1.1.1">v1.1.1+commit.536412e</option>*/}
-										{/*<option value="v1.1.0">v1.1.0+commit.4c9993f</option>*/}
-										{/*<option value="v1.0.8">v1.0.8+commit.97d65f2</option>*/}
 									</select>
 								</div>
 

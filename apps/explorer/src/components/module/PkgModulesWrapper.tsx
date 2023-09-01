@@ -3,13 +3,16 @@
 
 import { Search24 } from '@mysten/icons';
 import { Combobox, ComboboxInput, ComboboxList } from '@mysten/ui';
+import axios, { type AxiosResponse } from 'axios';
 import clsx from 'clsx';
-import { type Dispatch, type SetStateAction, useCallback, useEffect, useState } from 'react';
+import JSZip from 'jszip';
+import { useCallback, useEffect, useState } from 'react';
 import { type Direction } from 'react-resizable-panels';
 
 import ModuleView from './ModuleView';
 import { ModuleFunctionsInteraction } from './module-functions-interaction';
 import VerifiedModuleViewWrapper from '~/components/module/VerifiedModuleViewWrapper';
+import { useNetwork } from '~/context';
 import { useBreakpoint } from '~/hooks/useBreakpoint';
 import { SplitPanes } from '~/ui/SplitPanes';
 import { TabHeader, Tabs, TabsContent, TabsList, TabsTrigger } from '~/ui/Tabs';
@@ -28,16 +31,22 @@ interface Props {
 	modules: ModuleType[];
 	splitPanelOrientation: Direction;
 	initialTab?: string | null;
-	packageFiles: PackageFile[];
-	verified: boolean;
-	setVerified: Dispatch<SetStateAction<boolean>>;
-	setPackageFiles: Dispatch<SetStateAction<PackageFile[]>>;
 }
 
 interface ModuleViewWrapperProps {
 	id?: string;
 	selectedModuleName: string;
 	modules: ModuleType[];
+}
+
+interface VerificationCheckReqDto {
+	network: string;
+	packageId: string;
+}
+
+interface VerificationCheckResDto {
+	isVerified: boolean;
+	verifiedSrcUrl: string;
 }
 
 function ModuleViewWrapper({ id, selectedModuleName, modules }: ModuleViewWrapperProps) {
@@ -53,15 +62,7 @@ function ModuleViewWrapper({ id, selectedModuleName, modules }: ModuleViewWrappe
 }
 const VALID_TABS = ['bytecode', 'code'];
 
-function PkgModuleViewWrapper({
-	id,
-	modules,
-	splitPanelOrientation,
-	initialTab,
-	packageFiles,
-	verified,
-	setVerified,
-}: Props) {
+function PkgModuleViewWrapper({ id, modules, splitPanelOrientation, initialTab }: Props) {
 	const isMediumOrAbove = useBreakpoint('md');
 
 	const modulenames = modules.map(([name]) => name);
@@ -70,6 +71,82 @@ function PkgModuleViewWrapper({
 	const [activeTab, setActiveTab] = useState(() =>
 		initialTab && VALID_TABS.includes(initialTab) ? initialTab : 'bytecode',
 	);
+	const [packageFiles, setPackageFiles] = useState<PackageFile[]>([]);
+	const [verified, setVerified] = useState<boolean>(false);
+	const [network] = useNetwork();
+
+	useEffect(() => {
+		const packageId = id;
+		console.log(`@@@@@@@@@@ id`, id);
+		if (!packageId) {
+			return;
+		}
+
+		async function codeVerificationCheck() {
+			const { status, data: verificationCheckResult } = await axios.get<
+				VerificationCheckResDto,
+				AxiosResponse<VerificationCheckResDto>,
+				VerificationCheckReqDto
+			>(`https://api.welldonestudio.io/compiler/sui/verifications`, {
+				// todo
+				params: {
+					network: network.toLowerCase(),
+					packageId: packageId,
+				},
+			});
+			if (status !== 200) {
+				return;
+			}
+			console.log('verificationCheckResult', verificationCheckResult);
+			if (!verificationCheckResult.isVerified) {
+				setVerified(false);
+				setPackageFiles([]);
+				return;
+			}
+
+			const { status: VerifiedSrcResStatus, data: blob } = await axios.get<Blob>(
+				verificationCheckResult.verifiedSrcUrl,
+				{
+					responseType: 'blob',
+				},
+			);
+
+			if (VerifiedSrcResStatus !== 200) {
+				throw new Error('Network response was not ok');
+			}
+
+			new JSZip().loadAsync(blob).then((unzipped: JSZip) => {
+				const filePromises: Promise<PackageFile>[] = [];
+				unzipped.forEach((relativePath: string, file: JSZip.JSZipObject) => {
+					if (!file.dir) {
+						const filePromise = file.async('text').then(
+							(content: string): PackageFile => ({
+								relativePath: file.name,
+								content: content,
+							}),
+						);
+						filePromises.push(filePromise);
+					}
+				});
+
+				Promise.all(filePromises).then((packageFiles) => {
+					console.log('verified packageFiles', packageFiles);
+					setPackageFiles(
+						packageFiles.filter(
+							(packageFile) =>
+								!(
+									packageFile.relativePath.includes('Move.toml') ||
+									packageFile.relativePath.includes('Move.lock')
+								),
+						),
+					);
+					setVerified(verificationCheckResult.isVerified);
+				});
+			});
+		}
+
+		codeVerificationCheck().then();
+	}, [verified]);
 
 	// Extract module in URL or default to first module in list
 	const selectedModule =

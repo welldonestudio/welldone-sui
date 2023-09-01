@@ -3,10 +3,6 @@
 
 import { useGetObject } from '@mysten/core';
 import { LoadingIndicator } from '@mysten/ui';
-import axios from 'axios';
-import { type AxiosResponse } from 'axios';
-import JSZip from 'jszip';
-import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 
 import { translate, type DataType } from './ObjectResultType';
@@ -14,22 +10,10 @@ import PkgView from './views/PkgView';
 import { TokenView } from './views/TokenView';
 import { ErrorBoundary } from '../../components/error-boundary/ErrorBoundary';
 import { PageLayout } from '~/components/Layout/PageLayout';
-import { type PackageFile } from '~/components/module/PkgModulesWrapper';
-import { useNetwork } from '~/context';
 import { Banner } from '~/ui/Banner';
 import { PageHeader } from '~/ui/PageHeader';
 
 const PACKAGE_TYPE_NAME = 'Move Package';
-
-interface VerificationCheckReqDto {
-	network: string;
-	packageId: string;
-}
-
-interface VerificationCheckResDto {
-	isVerified: boolean;
-	verifiedSrcUrl: string;
-}
 
 function Fail({ objID }: { objID: string | undefined }) {
 	return (
@@ -44,85 +28,8 @@ function Fail({ objID }: { objID: string | undefined }) {
 }
 
 export function ObjectResult() {
-	const [network] = useNetwork();
-
 	const { id: objID } = useParams();
 	const { data, isLoading, isError, isFetched } = useGetObject(objID!);
-	const [packageFiles, setPackageFiles] = useState<PackageFile[]>([]);
-	const [verified, setVerified] = useState<boolean>(false);
-
-	useEffect(() => {
-		console.log('@@@@@@ useEffect packageFiles', packageFiles, 'verified', verified);
-		if (!data) {
-			return;
-		}
-		const packageId = data.data?.objectId;
-
-		async function verifyCheck() {
-			const { status, data: verificationCheckResult } = await axios.get<
-				VerificationCheckResDto,
-				AxiosResponse<VerificationCheckResDto>,
-				VerificationCheckReqDto
-			>(`https://api.welldonestudio.io/compiler/sui/verifications`, {
-				// todo
-				params: {
-					network: network.toLowerCase(),
-					packageId: packageId,
-				},
-			});
-			if (status !== 200) {
-				return;
-			}
-			console.log('verificationCheckResult', verificationCheckResult);
-			if (!verificationCheckResult.isVerified) {
-				setVerified(false);
-				setPackageFiles([]);
-				return;
-			}
-
-			const { status: VerifiedSrcResStatus, data: blob } = await axios.get<Blob>(
-				verificationCheckResult.verifiedSrcUrl,
-				{
-					responseType: 'blob',
-				},
-			);
-
-			if (VerifiedSrcResStatus !== 200) {
-				throw new Error('Network response was not ok');
-			}
-
-			new JSZip().loadAsync(blob).then((unzipped: JSZip) => {
-				const filePromises: Promise<PackageFile>[] = [];
-				unzipped.forEach((relativePath: string, file: JSZip.JSZipObject) => {
-					if (!file.dir) {
-						const filePromise = file.async('text').then(
-							(content: string): PackageFile => ({
-								relativePath: file.name,
-								content: content,
-							}),
-						);
-						filePromises.push(filePromise);
-					}
-				});
-
-				Promise.all(filePromises).then((packageFiles) => {
-					console.log('verified packageFiles', packageFiles);
-					setPackageFiles(
-						packageFiles.filter(
-							(packageFile) =>
-								!(
-									packageFile.relativePath.includes('Move.toml') ||
-									packageFile.relativePath.includes('Move.lock')
-								),
-						),
-					);
-					setVerified(verificationCheckResult.isVerified);
-				});
-			});
-		}
-
-		verifyCheck().then();
-	}, [verified, data]);
 
 	if (isLoading) {
 		return (
@@ -155,17 +62,7 @@ export function ObjectResult() {
 					<PageHeader type={isPackage ? 'Package' : 'Object'} title={resp.id} />
 					<ErrorBoundary>
 						<div className="mt-10">
-							{isPackage ? (
-								<PkgView
-									data={resp}
-									packageFiles={packageFiles}
-									verified={verified}
-									setVerified={setVerified}
-									setPackageFiles={setPackageFiles}
-								/>
-							) : (
-								<TokenView data={data} />
-							)}
+							{isPackage ? <PkgView data={resp} /> : <TokenView data={data} />}
 						</div>
 					</ErrorBoundary>
 				</div>

@@ -2,11 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { LoadingIndicator, RadioGroup, RadioGroupItem } from '@mysten/ui';
-import { type Dispatch, type SetStateAction, useState } from 'react';
+import { useState } from 'react';
 import { type Direction } from 'react-resizable-panels';
 
 import { ErrorBoundary } from '../../../components/error-boundary/ErrorBoundary';
-import PkgModulesWrapper, { type PackageFile } from '../../../components/module/PkgModulesWrapper';
+import PkgModulesWrapper from '../../../components/module/PkgModulesWrapper';
 import { useGetTransaction } from '../../../hooks/useGetTransaction';
 import { getOwnerStr } from '../../../utils/objectUtils';
 import { trimStdLibPrefix } from '../../../utils/stringUtils';
@@ -26,19 +26,7 @@ const splitPanelsOrientation: { label: string; value: Direction }[] = [
 	{ label: 'SIDE-BY-SIDE', value: 'horizontal' },
 ];
 
-function PkgView({
-	data,
-	verified,
-	setVerified,
-	setPackageFiles,
-	packageFiles,
-}: {
-	data: DataType;
-	verified: boolean;
-	setVerified: Dispatch<SetStateAction<boolean>>;
-	setPackageFiles: Dispatch<SetStateAction<PackageFile[]>>;
-	packageFiles: PackageFile[];
-}) {
+function PkgView({ data }: { data: DataType }) {
 	const [selectedSplitPanelOrientation, setSplitPanelOrientation] = useState(
 		splitPanelsOrientation[1].value,
 	);
@@ -119,10 +107,6 @@ function PkgView({
 							<PkgModulesWrapper
 								id={data.id}
 								modules={properties}
-								packageFiles={packageFiles}
-								setPackageFiles={setPackageFiles}
-								verified={verified}
-								setVerified={setVerified}
 								splitPanelOrientation={selectedSplitPanelOrientation}
 							/>
 						</ErrorBoundary>

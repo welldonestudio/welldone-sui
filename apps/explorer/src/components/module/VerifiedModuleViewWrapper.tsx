@@ -1,9 +1,10 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
+import { type Dispatch, type SetStateAction } from 'react';
+
 import ModuleView from '~/components/module/ModuleView';
-import { type ModuleType, PackageFile } from '~/components/module/PkgModulesWrapper';
+import { type ModuleType, type PackageFile } from '~/components/module/PkgModulesWrapper';
 import VerifyRegister from '~/components/module/VerifyRegister';
-import { Dispatch, SetStateAction } from 'react';
 
 interface VerifiedModuleViewWrapperProps {
 	id?: string;
@@ -30,9 +31,8 @@ function VerifiedModuleViewWrapper({
 
 	console.log(`@@@ packageFiles`, packageFiles);
 	const code =
-		packageFiles.find((element: any) => {
-			return element.content.includes(`::${name}`);
-		})?.content || '';
+		packageFiles.find((element: PackageFile) => element.content.includes(`::${name}`))?.content ||
+		'';
 
 	return verified ? (
 		<ModuleView id={id} name={name} code={code} />

@@ -30,7 +30,6 @@ interface TooltipProps {
 	children: ReactNode;
 	onOpen?: () => void;
 	placement?: Placement;
-	isInline?: boolean;
 }
 
 export function Tooltip({ tip, children, onOpen, placement = 'top' }: TooltipProps) {

@@ -9,11 +9,11 @@ import JSZip from 'jszip';
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 
-import { type DataType, translate } from './ObjectResultType';
+import { translate, type DataType } from './ObjectResultType';
 import PkgView from './views/PkgView';
 import { TokenView } from './views/TokenView';
+import { ErrorBoundary } from '../../components/error-boundary/ErrorBoundary';
 import { PageLayout } from '~/components/Layout/PageLayout';
-import { ErrorBoundary } from '~/components/error-boundary/ErrorBoundary';
 import { type PackageFile } from '~/components/module/PkgModulesWrapper';
 import { useNetwork } from '~/context';
 import { Banner } from '~/ui/Banner';

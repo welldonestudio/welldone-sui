@@ -51,8 +51,6 @@ function PkgView({ data }: { data: DataType }) {
 		.filter(([key, _]) => key !== 'name')
 		.filter(([_, value]) => checkIsPropertyType(value));
 
-	console.log(`properties`, properties);
-
 	return (
 		<div>
 			<div>

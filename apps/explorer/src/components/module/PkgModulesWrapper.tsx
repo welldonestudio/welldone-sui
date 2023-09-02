@@ -146,7 +146,7 @@ function PkgModuleViewWrapper({ id, modules, splitPanelOrientation, initialTab }
 		}
 
 		codeVerificationCheck().then();
-	}, [id]);
+	}, [id, verified]);
 
 	// Extract module in URL or default to first module in list
 	const selectedModule =

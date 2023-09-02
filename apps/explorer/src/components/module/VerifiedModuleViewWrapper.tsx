@@ -31,8 +31,9 @@ function VerifiedModuleViewWrapper({
 
 	console.log(`@@@ packageFiles`, packageFiles);
 	const code =
-		packageFiles.find((element: PackageFile) => element.content.includes(`::${name}`))?.content ||
-		'';
+		packageFiles.find((element: PackageFile) =>
+			element.content.match(`module\\s+\\w+::${name}\\s+{`),
+		)?.content || '';
 
 	return verified ? (
 		<ModuleView id={id} name={name} code={code} />

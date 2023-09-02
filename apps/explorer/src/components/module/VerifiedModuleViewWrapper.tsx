@@ -30,10 +30,9 @@ function VerifiedModuleViewWrapper({
 	const [name] = selectedModuleData;
 
 	console.log(`@@@ packageFiles`, packageFiles);
+	const reg = new RegExp(`module\\s+\\w+::${name}\\s+{([\\s\\S]*?)^}`, 'gm');
 	const code =
-		packageFiles.find((element: PackageFile) =>
-			element.content.match(`module\\s+\\w+::${name}\\s+{`),
-		)?.content || '';
+		packageFiles.find((element: PackageFile) => reg.test(element.content))?.content || '';
 
 	return verified ? (
 		<ModuleView id={id} name={name} code={code} />
